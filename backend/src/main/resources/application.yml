@@ -1,0 +1,73 @@
+spring:
+  application:
+    name: jobfit
+  profiles:
+    default: local
+  jpa:
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc.batch_size: 100
+        order_inserts: true
+        default_batch_fetch_size: 100
+
+server:
+  port: 8080
+
+jobfit:
+  jwt:
+    # 운영에서는 반드시 환경변수 JOBFIT_JWT_SECRET 로 교체한다 (32바이트 이상)
+    secret: ${JOBFIT_JWT_SECRET:local-dev-only-secret-change-me-0123456789abcdef}
+    expire-minutes: 120
+  ai:
+    base-url: ${JOBFIT_AI_URL:http://localhost:8000}
+  cors:
+    allowed-origins: ${JOBFIT_CORS:http://localhost:5173}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+---
+# 로컬 개발: 설치 없이 실행되도록 H2 + 인메모리 캐시
+spring:
+  config:
+    activate:
+      on-profile: local
+  datasource:
+    url: jdbc:h2:mem:jobfit;MODE=MySQL;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+  cache:
+    type: simple
+management:
+  health:
+    redis:
+      enabled: false
+
+---
+# 운영: MySQL + Redis (docker-compose 참고)
+spring:
+  config:
+    activate:
+      on-profile: prod
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:jobfit}?useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=UTF-8&serverTimezone=Asia/Seoul
+    username: ${DB_USER:jobfit}
+    password: ${DB_PASSWORD:}
+  jpa:
+    hibernate:
+      ddl-auto: update
+  cache:
+    type: redis
+    redis:
+      time-to-live: 10m
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}

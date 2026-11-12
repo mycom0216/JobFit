@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>JobFit - 신입 개발 공고 적합도</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--tx:#1b1f24;--sub:#667085;--line:#e4e7ec;--pri:#2457d6;--ok:#12805c;--warn:#b54708}
+@media(prefers-color-scheme:dark){:root{--bg:#14171c;--card:#1d2127;--tx:#e8eaed;--sub:#9aa3af;--line:#2d333b;--pri:#6b94ff;--ok:#4cc79a;--warn:#f0a040}}
+*{box-sizing:border-box}body{margin:0;font:15px/1.5 system-ui,"Malgun Gothic",sans-serif;background:var(--bg);color:var(--tx)}
+header{background:var(--card);border-bottom:1px solid var(--line);padding:12px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+header h1{font-size:18px;margin:0}nav{display:flex;gap:4px;flex-wrap:wrap}
+nav button,.btn{border:1px solid var(--line);background:var(--card);color:var(--tx);padding:6px 12px;border-radius:8px;cursor:pointer;font:inherit}
+nav button.on,.btn.pri{background:var(--pri);border-color:var(--pri);color:#fff}
+.sp{flex:1}main{max-width:980px;margin:0 auto;padding:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:10px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+input,select,textarea{border:1px solid var(--line);background:var(--card);color:var(--tx);padding:7px 10px;border-radius:8px;font:inherit}
+.tag{display:inline-block;font-size:12px;border:1px solid var(--line);border-radius:99px;padding:1px 8px;margin:2px 4px 0 0;color:var(--sub)}
+.tag.m{border-color:var(--ok);color:var(--ok)}.tag.x{border-color:var(--warn);color:var(--warn)}
+.sub{color:var(--sub);font-size:13px}.t{font-weight:600}a{color:var(--pri)}
+.bar{height:8px;background:var(--line);border-radius:4px;overflow:hidden;min-width:120px}.bar i{display:block;height:100%;background:var(--pri)}
+.stat{display:grid;grid-template-columns:130px 1fr 40px;gap:8px;align-items:center;padding:3px 0}
+.msg{white-space:pre-wrap}.err{color:var(--warn)}.hide{display:none}
+@media(max-width:560px){.stat{grid-template-columns:100px 1fr 34px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>JobFit</h1>
+  <nav id="nav"></nav>
+  <span class="sp"></span>
+  <span id="who" class="sub"></span>
+  <button class="btn" id="auth"></button>
+</header>
+<main id="main"></main>
+<script>
+const $=(s,r=document)=>r.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let token=null,nick=null;try{token=localStorage.getItem('jf_t');nick=localStorage.getItem('jf_n')}catch(e){}
+async function api(method,path,body){
+  const r=await fetch('/api'+path,{method,headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},body:body?JSON.stringify(body):undefined});
+  if(r.status===204)return null;
+  const j=await r.json().catch(()=>null);
+  if(!r.ok){if(r.status===401&&token&&path.startsWith('/me'))logout();throw new Error(j?.message||('오류 '+r.status))}
+  return j;
+}
+function logout(){token=nick=null;try{localStorage.removeItem('jf_t');localStorage.removeItem('jf_n')}catch(e){}head();go('search')}
+const TABS=[['search','공고 검색'],['stats','기술 통계'],['ask','AI 질문'],['me','내 기술·매칭'],['marks','관심 공고']];
+let tab='search',page=0,famous=true,marks=new Set();
+function head(){
+  $('#nav').innerHTML=TABS.map(([k,n])=>`<button data-k="${k}" class="${k===tab?'on':''}">${n}</button>`).join('');
+  $('#who').textContent=nick?nick+' 님':'';$('#auth').textContent=token?'로그아웃':'로그인/가입';
+}
+$('#nav').onclick=e=>{const k=e.target.dataset.k;if(k)go(k)};
+$('#auth').onclick=()=>token?logout():go('login');
+function go(k){tab=k;head();({search:vSearch,stats:vStats,ask:vAsk,me:vMe,marks:vMarks,login:vLogin})[k]()}
+const need=()=>{if(!token){$('#main').innerHTML='<div class="card">로그인이 필요한 화면입니다. <button class="btn pri" onclick="go(\'login\')">로그인/가입</button></div>';return false}return true};
+
+function card(p,extra=''){
+  const star=token?`<button class="btn" data-id="${p.id}" data-act="mark">${marks.has(p.id)?'★ 해제':'☆ 담기'}</button>`:'';
+  return `<div class="card"><div class="row" style="margin:0"><div style="flex:1"><div class="t">${esc(p.company)} ${p.famous?`<span class="tag m">${esc(p.famousReason||'유명기업')}</span>`:''}</div>
+  <div>${esc(p.title)}</div><div class="sub">${esc(p.conditions)} · ${esc(p.source)} ${p.note?'· '+esc(p.note):''}</div>
+  <div>${(p.skills||[]).map(s=>`<span class="tag">${esc(s)}</span>`).join('')}</div>${extra}</div>
+  <div><a href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">원문</a> ${star}</div></div></div>`;
+}
+async function loadMarks(){if(!token)return;try{marks=new Set((await api('GET','/me/bookmarks')).map(p=>p.id))}catch(e){}}
+$('#main').addEventListener('click',async e=>{
+  const b=e.target.closest('[data-act="mark"]');if(!b)return;const id=+b.dataset.id;
+  try{await api(marks.has(id)?'DELETE':'PUT','/me/bookmarks/'+id);marks.has(id)?marks.delete(id):marks.add(id);b.textContent=marks.has(id)?'★ 해제':'☆ 담기';if(tab==='marks')vMarks()}catch(err){alert(err.message)}
+});
+
+async function vSearch(){
+  const m=$('#main');
+  m.innerHTML=`<div class="row"><input id="kw" placeholder="기업·제목 (예: 카카오, 백엔드)" style="flex:1;min-width:180px"><input id="sk" placeholder="기술 (예: Redis)" size="10">
+  <label class="sub"><input type="checkbox" id="fo" ${famous?'checked':''}> 유명기업만</label><button class="btn pri" id="go">검색</button></div><div id="list"></div>`;
+  const run=async()=>{
+    famous=$('#fo').checked;const q=new URLSearchParams({famousOnly:famous,page,size:15});
+    if($('#kw').value.trim())q.set('keyword',$('#kw').value.trim());if($('#sk').value.trim())q.set('skill',$('#sk').value.trim());
+    try{await loadMarks();const r=await api('GET','/postings?'+q);
+      $('#list').innerHTML=`<div class="sub" style="margin-bottom:8px">총 ${r.totalElements}건 · ${r.page+1}/${Math.max(r.totalPages,1)} 쪽</div>`+(r.content.map(p=>card(p)).join('')||'<div class="card">결과가 없습니다</div>')+
+      `<div class="row"><button class="btn" id="pv" ${r.page<=0?'disabled':''}>이전</button><button class="btn" id="nx" ${r.page+1>=r.totalPages?'disabled':''}>다음</button></div>`;
+      $('#pv').onclick=()=>{page--;run()};$('#nx').onclick=()=>{page++;run()};
+    }catch(e){$('#list').innerHTML=`<div class="card err">${esc(e.message)}</div>`}};
+  $('#go').onclick=()=>{page=0;run()};$('#kw').onkeydown=e=>{if(e.key==='Enter'){page=0;run()}};run();
+}
+async function vStats(){
+  $('#main').innerHTML='<div class="row"><label class="sub"><input type="checkbox" id="fo" checked> 유명기업 공고만</label></div><div id="s" class="card">불러오는 중…</div>';
+  const run=async()=>{try{const r=await api('GET','/stats/skills?famousOnly='+$('#fo').checked);const max=Math.max(1,...r.map(x=>x.count));
+    $('#s').innerHTML=r.slice(0,30).map(x=>`<div class="stat"><span>${esc(x.name)} <span class="sub">${esc(x.category)}</span></span><div class="bar"><i style="width:${x.count/max*100}%"></i></div><b>${x.count}</b></div>`).join('')||'데이터 없음'}catch(e){$('#s').textContent=e.message}};
+  $('#fo').onchange=run;run();
+}
+function vAsk(){
+  $('#main').innerHTML=`<div class="card"><div class="row"><input id="q" placeholder="예) 신입이 지원할 수 있는 Spring Boot 백엔드 공고 알려줘" style="flex:1;min-width:200px" maxlength="500">
+  <label class="sub"><input type="checkbox" id="fo" checked> 유명기업만</label><button class="btn pri" id="go">질문</button></div><div id="a" class="sub">AI 답변은 공고 본문에 근거하지만 틀릴 수 있으니 원문을 확인하세요.</div></div>`;
+  const run=async()=>{const q=$('#q').value.trim();if(!q)return;$('#a').textContent='답변 생성 중… (로컬 모델이라 수십 초 걸릴 수 있습니다)';$('#go').disabled=true;
+    try{const r=await api('POST','/ai/ask',{question:q,famousOnly:$('#fo').checked});
+      $('#a').innerHTML=`${r.fallback?'<div class="tag x">AI 서비스 연결 실패 · 키워드 검색 결과</div>':''}<div class="msg" style="margin:8px 0">${esc(r.answer)}</div>`+
+      (r.sources.length?'<div class="sub">근거 공고</div>'+r.sources.map((s,i)=>`<div>[${i+1}] <a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${esc(s.company)} · ${esc(s.title)}</a></div>`).join(''):'')}
+    catch(e){$('#a').innerHTML=`<span class="err">${esc(e.message)}</span>`}$('#go').disabled=false};
+  $('#go').onclick=run;$('#q').onkeydown=e=>{if(e.key==='Enter')run()};
+}
+async function vMe(){
+  if(!need())return;const m=$('#main');m.innerHTML='불러오는 중…';
+  try{const [all,mine]=await Promise.all([api('GET','/stats/skills'),api('GET','/me/skills')]);
+    const names=all.map(x=>x.name).sort();
+    m.innerHTML=`<div class="card"><div class="t">보유 기술 선택</div><div id="chips" style="margin:8px 0">${names.map(n=>`<label class="tag" style="cursor:pointer"><input type="checkbox" value="${esc(n)}" ${mine.includes(n)?'checked':''}> ${esc(n)}</label>`).join('')}</div>
+    <button class="btn pri" id="save">저장 후 매칭</button> <label class="sub"><input type="checkbox" id="fo" checked> 유명기업만</label></div><div id="res"></div>`;
+    const match=async()=>{try{await loadMarks();const r=await api('GET','/me/matches?famousOnly='+$('#fo').checked);
+      $('#res').innerHTML=r.length?r.map(x=>card(x.posting,`<div class="row" style="margin:6px 0 0"><div class="bar"><i style="width:${x.score}%"></i></div><b>${x.score}점</b></div>
+      <div>${x.matched.map(s=>`<span class="tag m">✓ ${esc(s)}</span>`).join('')}${x.missing.map(s=>`<span class="tag x">+ ${esc(s)}</span>`).join('')}</div>`)).join(''):'<div class="card">일치하는 공고가 없습니다. 기술을 더 선택해 보세요.</div>'}catch(e){$('#res').innerHTML=`<div class="card err">${esc(e.message)}</div>`}};
+    $('#save').onclick=async()=>{try{await api('PUT','/me/skills',{skills:[...document.querySelectorAll('#chips input:checked')].map(i=>i.value)});match()}catch(e){alert(e.message)}};
+    $('#fo').onchange=match;if(mine.length)match();
+  }catch(e){m.innerHTML=`<div class="card err">${esc(e.message)}</div>`}
+}
+async function vMarks(){
+  if(!need())return;try{const r=await api('GET','/me/bookmarks');marks=new Set(r.map(p=>p.id));$('#main').innerHTML=r.map(p=>card(p)).join('')||'<div class="card">담은 공고가 없습니다</div>'}catch(e){$('#main').innerHTML=`<div class="card err">${esc(e.message)}</div>`}
+}
+function vLogin(){
+  $('#main').innerHTML=`<div class="card" style="max-width:380px"><div class="t" id="lt">로그인</div><div style="display:grid;gap:8px;margin:10px 0">
+  <input id="em" type="email" placeholder="이메일" autocomplete="username"><input id="pw" type="password" placeholder="비밀번호 (가입 시 8자 이상)" autocomplete="current-password">
+  <input id="nk" placeholder="닉네임 (가입 시)" class="hide" maxlength="30"></div><div class="row"><button class="btn pri" id="ok">로그인</button><button class="btn" id="sw">회원가입으로</button></div><div id="e" class="err"></div></div>`;
+  let signup=false;
+  $('#sw').onclick=()=>{signup=!signup;$('#nk').classList.toggle('hide',!signup);$('#lt').textContent=signup?'회원가입':'로그인';$('#ok').textContent=signup?'가입':'로그인';$('#sw').textContent=signup?'로그인으로':'회원가입으로'};
+  $('#ok').onclick=async()=>{try{const body={email:$('#em').value,password:$('#pw').value};if(signup)body.nickname=$('#nk').value;
+    const r=await api('POST',signup?'/auth/signup':'/auth/login',body);token=r.token;nick=r.nickname;try{localStorage.setItem('jf_t',token);localStorage.setItem('jf_n',nick)}catch(e){}head();go('search')}catch(e){$('#e').textContent=e.message}};
+}
+head();go('search');
+</script>
+</body>
+</html>
